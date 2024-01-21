@@ -1,36 +1,36 @@
 package main
 
 import (
-	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Tronikelis/tdm/files"
 	"github.com/Tronikelis/tdm/walker"
 )
 
 const SYNCED_PATH string = "synced"
 
 func syncFromRemote(syncedDir string, homeDir string) error {
-	return walker.WalkFiles(syncedDir, func(path, relativePath string, info fs.FileInfo) error {
+	return walker.WalkFiles(syncedDir, func(path string) error {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
 		log.Println("syncing", path)
 
-		return walker.MkDirCopyFile(path, fileToCreate)
+		return files.MkDirCopyFile(path, fileToCreate)
 	})
 }
 
 func addToRemote(localDir string, syncedDir string, homeDir string) error {
-	return walker.WalkFiles(localDir, func(path string, relativePath string, info fs.FileInfo) error {
+	return walker.WalkFiles(localDir, func(path string) error {
 		localSuffix := strings.Replace(path, homeDir, "", 1)
 		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
 		log.Println("syncing", path)
 
-		return walker.MkDirCopyFile(path, fileToCreate)
+		return files.MkDirCopyFile(path, fileToCreate)
 	})
 }
 
