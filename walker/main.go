@@ -22,7 +22,21 @@ func WalkFiles(
 	})
 }
 
-func RecursiveWalk(targetDir string, shouldContinue func(path string) bool) error {
+func RecursiveWalk(targetDir string, shouldSkip func(path string) (bool, error)) error {
+	info, err := os.Stat(targetDir)
+	if err != nil {
+		return err
+	}
+
+	skip, err := shouldSkip(targetDir)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() || skip {
+		return nil
+	}
+
 	dirs, err := os.ReadDir(targetDir)
 	if err != nil {
 		return err
@@ -31,15 +45,7 @@ func RecursiveWalk(targetDir string, shouldContinue func(path string) bool) erro
 	for _, dir := range dirs {
 		childDir := filepath.Join(targetDir, dir.Name())
 
-		if !shouldContinue(childDir) {
-			continue
-		}
-
-		if !dir.IsDir() {
-			continue
-		}
-
-		if err := RecursiveWalk(childDir, shouldContinue); err != nil {
+		if err := RecursiveWalk(childDir, shouldSkip); err != nil {
 			return err
 		}
 	}
