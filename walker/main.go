@@ -5,15 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-func AppendDir(
-	base string,
-	with string,
-	pathChanger func(base *string, with *string),
-	copier func(fileName string, reader *bufio.Reader, writer *bufio.Writer) error,
+func WalkFiles(
+	targetDir string,
+	callback func(path string, relativePath string, info fs.FileInfo) error,
 ) error {
-	return filepath.Walk(with, func(path string, info fs.FileInfo, err error) error {
+	return filepath.Walk(targetDir, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -21,31 +20,37 @@ func AppendDir(
 			return nil
 		}
 
-		targetDir := filepath.Join(base, path)
+		relativePath := strings.Replace(path, targetDir, "", 1)
 
-		pathChanger(&path, &targetDir)
-
-		if err := os.MkdirAll(filepath.Dir(targetDir), os.ModePerm); err != nil {
-			return err
-		}
-
-		fromFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer fromFile.Close()
-
-		toFile, err := os.Create(targetDir)
-		if err != nil {
-			return err
-		}
-		defer toFile.Close()
-
-		reader := bufio.NewReader(fromFile)
-		writer := bufio.NewWriter(toFile)
-
-		defer writer.Flush()
-
-		return copier(info.Name(), reader, writer)
+		return callback(path, relativePath, info)
 	})
+}
+
+func MkDirCopyFile(from, to string) error {
+	if err := os.MkdirAll(filepath.Dir(to), os.ModePerm); err != nil {
+		return err
+	}
+
+	fromFile, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer fromFile.Close()
+
+	toFile, err := os.Create(to)
+	if err != nil {
+		return err
+	}
+	defer toFile.Close()
+
+	reader := bufio.NewReader(fromFile)
+	writer := bufio.NewWriter(toFile)
+
+	defer writer.Flush()
+
+	if _, err := writer.ReadFrom(reader); err != nil {
+		return err
+	}
+
+	return nil
 }

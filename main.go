@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,52 +12,26 @@ import (
 
 const SYNCED_PATH string = "synced"
 
-func removeLastOccurrence(target string, occurrence string) string {
-	index := strings.LastIndex(target, occurrence)
-
-	if index == -1 {
-		return target
-	}
-
-	return target[:index] + target[index+len(occurrence):]
-}
-
 func syncFromRemote(syncedDir string, homeDir string) error {
-	return walker.AppendDir(
-		homeDir,
-		syncedDir,
-		func(fromDir *string, targetDir *string) {
-			*targetDir = strings.Replace(*targetDir, syncedDir, "", 1)
-			log.Println("syncing", *targetDir)
-		},
-		func(fileName string, reader *bufio.Reader, writer *bufio.Writer) error {
-			if _, err := writer.ReadFrom(reader); err != nil {
-				return err
-			}
+	return walker.WalkFiles(syncedDir, func(path, relativePath string, info fs.FileInfo) error {
+		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
+		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
-			return nil
-		},
-	)
+		log.Println("syncing", path)
 
+		return walker.MkDirCopyFile(path, fileToCreate)
+	})
 }
 
 func addToRemote(localDir string, syncedDir string, homeDir string) error {
-	return walker.AppendDir(
-		syncedDir,
-		localDir,
-		func(fromDir *string, targetDir *string) {
-			*targetDir = removeLastOccurrence(*targetDir, homeDir)
-			log.Println("adding", *targetDir)
-		},
-		func(fileName string, reader *bufio.Reader, writer *bufio.Writer) error {
-			if _, err := writer.ReadFrom(reader); err != nil {
-				return err
-			}
+	return walker.WalkFiles(localDir, func(path string, relativePath string, info fs.FileInfo) error {
+		localSuffix := strings.Replace(path, homeDir, "", 1)
+		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
-			return nil
-		},
-	)
+		log.Println("syncing", path)
 
+		return walker.MkDirCopyFile(path, fileToCreate)
+	})
 }
 
 func main() {
