@@ -26,12 +26,11 @@ func syncFromRemote(syncedDir string, homeDir string) error {
 	return walker.AppendDir(
 		homeDir,
 		syncedDir,
-		func(base *string, with *string) {
-			*with = strings.Replace(*with, syncedDir, "", 1)
+		func(fromDir *string, targetDir *string) {
+			*targetDir = strings.Replace(*targetDir, syncedDir, "", 1)
+			log.Println("syncing", *targetDir)
 		},
 		func(fileName string, reader *bufio.Reader, writer *bufio.Writer) error {
-			log.Println("syncing", fileName)
-
 			if _, err := writer.ReadFrom(reader); err != nil {
 				return err
 			}
@@ -46,12 +45,11 @@ func addToRemote(localDir string, syncedDir string, homeDir string) error {
 	return walker.AppendDir(
 		syncedDir,
 		localDir,
-		func(base *string, with *string) {
-			*with = removeLastOccurrence(*with, homeDir)
+		func(fromDir *string, targetDir *string) {
+			*targetDir = removeLastOccurrence(*targetDir, homeDir)
+			log.Println("adding", *targetDir)
 		},
 		func(fileName string, reader *bufio.Reader, writer *bufio.Writer) error {
-			log.Println("adding", fileName)
-
 			if _, err := writer.ReadFrom(reader); err != nil {
 				return err
 			}

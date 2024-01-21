@@ -3,7 +3,6 @@ package walker
 import (
 	"bufio"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -36,15 +35,11 @@ func AppendDir(
 		}
 		defer fromFile.Close()
 
-		log.Println("opening", path)
-
 		toFile, err := os.Create(targetDir)
 		if err != nil {
 			return err
 		}
 		defer toFile.Close()
-
-		log.Println("creating", targetDir)
 
 		reader := bufio.NewReader(fromFile)
 		writer := bufio.NewWriter(toFile)
