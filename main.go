@@ -6,40 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Tronikelis/tdm/files"
-	"github.com/Tronikelis/tdm/walker"
+	"github.com/Tronikelis/tdm/commands"
 )
 
 const SYNCED_PATH string = "synced"
 
-func syncFromRemote(syncedDir string, homeDir string) error {
-	return walker.WalkFiles(syncedDir, func(path string) error {
-		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
-		fileToCreate := filepath.Join(homeDir, syncedSuffix)
-
-		log.Println("syncing", fileToCreate)
-
-		return files.MkDirCopyFile(path, fileToCreate)
-	})
-}
-
-func addToRemote(localDir string, syncedDir string, homeDir string) error {
-	return walker.WalkFiles(localDir, func(path string) error {
-		localSuffix := strings.Replace(path, homeDir, "", 1)
-		fileToCreate := filepath.Join(syncedDir, localSuffix)
-
-		log.Println("syncing", fileToCreate)
-
-		return files.MkDirCopyFile(path, fileToCreate)
-	})
-}
-
 func main() {
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalln(err)
@@ -51,26 +23,59 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	args := os.Args
+	args := os.Args[1:]
+
+	if len(args) == 0 {
+		log.Fatalln("the available commands are: [add, sync]")
+	}
 
 	if len(args) == 1 {
-		if err := syncFromRemote(syncedDir, homeDir); err != nil {
-			log.Fatalln(err)
+		if args[0] == "add" {
+			log.Println("re-adding all synced files")
+
+			if err := commands.SyncToRemote(syncedDir, homeDir); err != nil {
+				log.Fatalln(err)
+			}
+
+			return
 		}
 
-		return
+		if args[0] == "sync" {
+			log.Println("syncing files from tracked directory")
+
+			if err := commands.SyncFromRemote(syncedDir, homeDir); err != nil {
+				log.Fatal(err)
+			}
+
+			return
+		}
+
+		log.Fatalln("unknown command, valid commands are: [add, sync]")
 	}
 
-	localDir := args[1]
-	if !filepath.IsAbs(localDir) {
-		localDir = filepath.Join(cwd, args[1])
-	}
+	if len(args) == 2 {
+		if args[0] == "add" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalln(err)
+			}
 
-	if !strings.HasPrefix(localDir, homeDir) {
-		log.Fatalln("adding non /home items is not supported")
-	}
+			localDir := args[1]
+			if !filepath.IsAbs(localDir) {
+				localDir = filepath.Join(cwd, args[1])
+			}
 
-	if err := addToRemote(localDir, syncedDir, homeDir); err != nil {
-		log.Fatalln(err)
+			if !strings.HasPrefix(localDir, homeDir) {
+				log.Fatalln("adding non /home items is not supported")
+			}
+
+			if err := commands.AddToRemote(localDir, syncedDir, homeDir); err != nil {
+				log.Fatalln(err)
+			}
+
+			return
+		}
+
+		log.Fatalln("unknown command")
 	}
 }
