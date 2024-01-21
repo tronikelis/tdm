@@ -17,7 +17,7 @@ func syncFromRemote(syncedDir string, homeDir string) error {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
-		log.Println("syncing", path)
+		log.Println("syncing", fileToCreate)
 
 		return files.MkDirCopyFile(path, fileToCreate)
 	})
@@ -28,7 +28,7 @@ func addToRemote(localDir string, syncedDir string, homeDir string) error {
 		localSuffix := strings.Replace(path, homeDir, "", 1)
 		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
-		log.Println("syncing", path)
+		log.Println("syncing", fileToCreate)
 
 		return files.MkDirCopyFile(path, fileToCreate)
 	})
