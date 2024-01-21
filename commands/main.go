@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,29 +12,37 @@ import (
 )
 
 func SyncFromRemote(syncedDir, homeDir string) error {
-	return walker.WalkFiles(syncedDir, func(path string) error {
+	return walker.WalkFiles(syncedDir, func(path string, info fs.FileInfo) (bool, error) {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
 		log.Println("syncing", fileToCreate)
 
-		return files.MkDirCopyFile(path, fileToCreate)
+		if err := files.MkDirCopyFile(path, fileToCreate); err != nil {
+			return true, err
+		}
+
+		return false, nil
 	})
 }
 
 func AddToRemote(localDir, syncedDir, homeDir string) error {
-	return walker.WalkFiles(localDir, func(path string) error {
+	return walker.WalkFiles(localDir, func(path string, info fs.FileInfo) (bool, error) {
 		localSuffix := strings.Replace(path, homeDir, "", 1)
 		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
 		log.Println("syncing", fileToCreate)
 
-		return files.MkDirCopyFile(path, fileToCreate)
+		if err := files.MkDirCopyFile(path, fileToCreate); err != nil {
+			return true, err
+		}
+
+		return false, nil
 	})
 }
 
 func SyncToRemote(syncedDir, homeDir string) error {
-	return walker.WalkFiles(syncedDir, func(path string) error {
+	return walker.WalkFiles(syncedDir, func(path string, info fs.FileInfo) (bool, error) {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		syncFrom := filepath.Join(homeDir, syncedSuffix)
 
@@ -45,12 +54,16 @@ func SyncToRemote(syncedDir, homeDir string) error {
 			log.Println("removing", path)
 
 			if err := os.Remove(path); err != nil {
-				return err
+				return true, err
 			}
 
-			return nil
+			return false, nil
 		}
 
-		return files.MkDirCopyFile(syncFrom, path)
+		if err := files.MkDirCopyFile(syncFrom, path); err != nil {
+			return true, err
+		}
+
+		return false, nil
 	})
 }

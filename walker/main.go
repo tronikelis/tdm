@@ -6,29 +6,23 @@ import (
 	"path/filepath"
 )
 
-func WalkFiles(
-	targetDir string,
-	callback func(path string) error,
-) error {
-	return filepath.Walk(targetDir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+func WalkFiles(targetDir string, shouldSkip func(path string, info fs.FileInfo) (bool, error)) error {
+	return recursiveWalk(targetDir, func(path string, info fs.FileInfo) (bool, error) {
 		if info.IsDir() {
-			return nil
+			return false, nil
 		}
 
-		return callback(path)
+		return shouldSkip(path, info)
 	})
 }
 
-func RecursiveWalk(targetDir string, shouldSkip func(path string) (bool, error)) error {
+func recursiveWalk(targetDir string, shouldSkip func(path string, info fs.FileInfo) (bool, error)) error {
 	info, err := os.Stat(targetDir)
 	if err != nil {
 		return err
 	}
 
-	skip, err := shouldSkip(targetDir)
+	skip, err := shouldSkip(targetDir, info)
 	if err != nil {
 		return err
 	}
@@ -45,7 +39,7 @@ func RecursiveWalk(targetDir string, shouldSkip func(path string) (bool, error))
 	for _, dir := range dirs {
 		childDir := filepath.Join(targetDir, dir.Name())
 
-		if err := RecursiveWalk(childDir, shouldSkip); err != nil {
+		if err := recursiveWalk(childDir, shouldSkip); err != nil {
 			return err
 		}
 	}
