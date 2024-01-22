@@ -3,6 +3,7 @@ package files
 import (
 	"archive/zip"
 	"bufio"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,9 +12,26 @@ import (
 	"github.com/Tronikelis/tdm/walker"
 )
 
+func createNecessaryDir(path string) error {
+	return os.MkdirAll(filepath.Dir(path), os.ModePerm)
+}
+
+func pipe(reader io.Reader, writer io.Writer) error {
+	bufReader := bufio.NewReader(reader)
+	bufWriter := bufio.NewWriter(writer)
+
+	defer bufWriter.Flush()
+
+	if _, err := bufWriter.ReadFrom(bufReader); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // copies "from" into "to" and creates necessary directories
 func MkDirCopyFile(from, to string) error {
-	if err := os.MkdirAll(filepath.Dir(to), os.ModePerm); err != nil {
+	if err := createNecessaryDir(to); err != nil {
 		return err
 	}
 
@@ -29,64 +47,83 @@ func MkDirCopyFile(from, to string) error {
 	}
 	defer toFile.Close()
 
-	reader := bufio.NewReader(fromFile)
-	writer := bufio.NewWriter(toFile)
+	return pipe(fromFile, toFile)
+}
 
-	defer writer.Flush()
-
-	if _, err := writer.ReadFrom(reader); err != nil {
+func ZipDirTo(dir, filePath string) error {
+	if err := createNecessaryDir(filePath); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func ZipToDir(dir string) (string, error) {
-	file, err := os.CreateTemp("", "tdm_zip")
+	file, err := os.Create(filePath)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer file.Close()
 
 	zipWriter := zip.NewWriter(file)
 	defer zipWriter.Close()
 
-	if err := walker.RecursiveWalk(dir, func(path string, info fs.FileInfo) (bool, error) {
+	return walker.RecursiveWalk(dir, func(path string, info fs.FileInfo) (bool, error) {
 		if info.IsDir() {
-			return false, nil
+			return walker.RContinue(nil)
 		}
 
 		header, err := zip.FileInfoHeader(info)
 		if err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
 
 		header.Name = strings.Replace(path, dir, "", 1)
 
-		openedZip, err := zipWriter.CreateHeader(header)
+		writer, err := zipWriter.CreateHeader(header)
 		if err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
 
-		openedFile, err := os.Open(path)
+		reader, err := os.Open(path)
 		if err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
-		defer openedFile.Close()
+		defer reader.Close()
 
-		reader := bufio.NewReader(openedFile)
-		writer := bufio.NewWriter(openedZip)
-
-		defer writer.Flush()
-
-		if _, err := writer.ReadFrom(reader); err != nil {
-			return true, err
+		if err := pipe(reader, writer); err != nil {
+			return walker.RSkip(err)
 		}
 
-		return false, nil
-	}); err != nil {
-		return "", err
+		return walker.RContinue(nil)
+	})
+}
+
+func UnzipToDir(dir, filePath string) error {
+	zipReader, err := zip.OpenReader(filePath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+
+	for _, zippedFile := range zipReader.File {
+		reader, err := zippedFile.Open()
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+
+		fileToCreate := filepath.Join(dir, zippedFile.Name)
+		if err := createNecessaryDir(fileToCreate); err != nil {
+			return err
+		}
+
+		writer, err := os.Create(fileToCreate)
+		if err != nil {
+			return err
+		}
+		defer writer.Close()
+
+		if err := pipe(reader, writer); err != nil {
+			return err
+		}
 	}
 
-	return file.Name(), nil
+	return nil
 }
