@@ -84,6 +84,10 @@ func SyncToRemote(syncedDir, homeDir string) error {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		syncFrom := filepath.Join(homeDir, syncedSuffix)
 
+		if filepath.Base(syncFrom) == ".git.zip" {
+			syncFrom, _ = strings.CutSuffix(syncFrom, ".zip")
+		}
+
 		log.Println("syncing", path)
 
 		_, err := os.Stat(syncFrom)
@@ -98,12 +102,10 @@ func SyncToRemote(syncedDir, homeDir string) error {
 			return walker.RContinue(nil)
 		}
 
-		if filepath.Base(syncFrom) == ".git.zip" {
-			gitPath, _ := strings.CutSuffix(syncFrom, ".zip")
+		if filepath.Base(syncFrom) == ".git" {
+			log.Println("zipping", syncFrom)
 
-			log.Println("zipping", gitPath)
-
-			if err := files.ZipDirTo(gitPath, path); err != nil {
+			if err := files.ZipDirTo(syncFrom, path); err != nil {
 				return walker.RSkip(err)
 			}
 
