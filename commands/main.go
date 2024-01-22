@@ -11,15 +11,6 @@ import (
 	"github.com/Tronikelis/tdm/walker"
 )
 
-func removeLast(str string, target string) string {
-	index := strings.LastIndex(str, target)
-	if index == -1 {
-		return str
-	}
-
-	return str[:index] + str[index+len(target):]
-}
-
 // home <- remote
 func SyncFromRemote(syncedDir, homeDir string) error {
 	return walker.RecursiveWalk(syncedDir, func(path string, info fs.FileInfo) (bool, error) {
@@ -30,12 +21,12 @@ func SyncFromRemote(syncedDir, homeDir string) error {
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
-		if strings.HasSuffix(path, ".git.zip") {
-			log.Println("unzipping", path)
+		if filepath.Base(path) == ".git.zip" {
+			gitPath, _ := strings.CutSuffix(fileToCreate, ".zip")
 
-			newDir := removeLast(fileToCreate, ".zip")
+			log.Println("unzipping", gitPath)
 
-			if err := files.UnzipToDir(newDir, path); err != nil {
+			if err := files.UnzipToDir(gitPath, path); err != nil {
 				return walker.RSkip(err)
 			}
 
@@ -58,7 +49,7 @@ func AddToRemote(localDir, syncedDir, homeDir string) error {
 		localSuffix := strings.Replace(path, homeDir, "", 1)
 		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
-		if strings.HasSuffix(path, ".git") {
+		if filepath.Base(path) == ".git" {
 			log.Println("zipping", path)
 
 			if err := files.ZipDirTo(path, fileToCreate+".zip"); err != nil {
@@ -107,8 +98,12 @@ func SyncToRemote(syncedDir, homeDir string) error {
 			return walker.RContinue(nil)
 		}
 
-		if strings.HasSuffix(syncedSuffix, ".git.zip") {
-			if err := files.ZipDirTo(removeLast(syncFrom, ".zip"), path); err != nil {
+		if filepath.Base(syncFrom) == ".git.zip" {
+			gitPath, _ := strings.CutSuffix(syncFrom, ".zip")
+
+			log.Println("zipping", gitPath)
+
+			if err := files.ZipDirTo(gitPath, path); err != nil {
 				return walker.RSkip(err)
 			}
 
