@@ -7,11 +7,11 @@ import (
 )
 
 func RSkip(err error) (bool, error) {
-	return false, err
+	return true, err
 }
 
 func RContinue(err error) (bool, error) {
-	return true, err
+	return false, err
 }
 
 func RecursiveWalk(targetDir string, shouldSkip func(path string, info fs.FileInfo) (bool, error)) error {
