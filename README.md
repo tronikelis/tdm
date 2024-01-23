@@ -25,3 +25,9 @@ and they didn't handle nested `.git` directories
 Most ppl handle dotfiles in git, and I want to do that as well, so there is a problem when adding nested .git dirs
 
 `tdm` will `.zip` `.git` directories if it encounters one
+
+## Synced directory
+
+The synced files are copied into `~/.tdm/synced/`
+
+This means you can `git init` in `~/.tdm/` and track your dotfiles with git, or with any other tool
