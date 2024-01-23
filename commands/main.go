@@ -24,6 +24,12 @@ func SyncFromRemote(syncedDir, homeDir string) error {
 		if filepath.Base(path) == ".git.zip" {
 			gitPath, _ := strings.CutSuffix(fileToCreate, ".zip")
 
+			log.Println("removing", gitPath)
+
+			if err := os.RemoveAll(gitPath); err != nil {
+				return walker.RSkip(err)
+			}
+
 			log.Println("unzipping", gitPath)
 
 			if err := files.UnzipToDir(gitPath, path); err != nil {
