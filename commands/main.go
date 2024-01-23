@@ -15,19 +15,37 @@ import (
 func SyncFromRemote(syncedDir, homeDir string) error {
 	return walker.RecursiveWalk(syncedDir, func(path string, info fs.FileInfo) (bool, error) {
 		if info.IsDir() {
-			return false, nil
+			return walker.RContinue(nil)
 		}
 
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		fileToCreate := filepath.Join(homeDir, syncedSuffix)
 
+		if filepath.Base(path) == ".git.zip" {
+			gitPath, _ := strings.CutSuffix(fileToCreate, ".zip")
+
+			log.Println("removing", gitPath)
+
+			if err := os.RemoveAll(gitPath); err != nil {
+				return walker.RSkip(err)
+			}
+
+			log.Println("unzipping", gitPath)
+
+			if err := files.UnzipToDir(gitPath, path); err != nil {
+				return walker.RSkip(err)
+			}
+
+			return walker.RSkip(nil)
+		}
+
 		log.Println("syncing", fileToCreate)
 
 		if err := files.MkDirCopyFile(path, fileToCreate); err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
 
-		return false, nil
+		return walker.RContinue(nil)
 	})
 }
 
@@ -37,35 +55,28 @@ func AddToRemote(localDir, syncedDir, homeDir string) error {
 		localSuffix := strings.Replace(path, homeDir, "", 1)
 		fileToCreate := filepath.Join(syncedDir, localSuffix)
 
-		if strings.HasSuffix(path, ".git") {
+		if filepath.Base(path) == ".git" {
 			log.Println("zipping", path)
 
-			zipFileDir, err := files.ZipToDir(path)
-			if err != nil {
-				return true, nil
-			}
-
-			defer os.Remove(zipFileDir)
-
-			if err := files.MkDirCopyFile(zipFileDir, fileToCreate+".zip"); err != nil {
-				return true, nil
+			if err := files.ZipDirTo(path, fileToCreate+".zip"); err != nil {
+				return walker.RSkip(err)
 			}
 
 			// skip this .git directory
-			return true, nil
+			return walker.RSkip(nil)
 		}
 
 		if info.IsDir() {
-			return false, nil
+			return walker.RContinue(nil)
 		}
 
 		log.Println("syncing", fileToCreate)
 
 		if err := files.MkDirCopyFile(path, fileToCreate); err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
 
-		return false, nil
+		return walker.RContinue(nil)
 	})
 }
 
@@ -73,11 +84,15 @@ func AddToRemote(localDir, syncedDir, homeDir string) error {
 func SyncToRemote(syncedDir, homeDir string) error {
 	return walker.RecursiveWalk(syncedDir, func(path string, info fs.FileInfo) (bool, error) {
 		if info.IsDir() {
-			return false, nil
+			return walker.RContinue(nil)
 		}
 
 		syncedSuffix := strings.Replace(path, syncedDir, "", 1)
 		syncFrom := filepath.Join(homeDir, syncedSuffix)
+
+		if filepath.Base(syncFrom) == ".git.zip" {
+			syncFrom, _ = strings.CutSuffix(syncFrom, ".zip")
+		}
 
 		log.Println("syncing", path)
 
@@ -87,16 +102,26 @@ func SyncToRemote(syncedDir, homeDir string) error {
 			log.Println("removing", path)
 
 			if err := os.Remove(path); err != nil {
-				return true, err
+				return walker.RSkip(err)
 			}
 
-			return false, nil
+			return walker.RContinue(nil)
+		}
+
+		if filepath.Base(syncFrom) == ".git" {
+			log.Println("zipping", syncFrom)
+
+			if err := files.ZipDirTo(syncFrom, path); err != nil {
+				return walker.RSkip(err)
+			}
+
+			return walker.RSkip(nil)
 		}
 
 		if err := files.MkDirCopyFile(syncFrom, path); err != nil {
-			return true, err
+			return walker.RSkip(err)
 		}
 
-		return false, nil
+		return walker.RContinue(nil)
 	})
 }
