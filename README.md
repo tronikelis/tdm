@@ -17,7 +17,7 @@ go install github.com/Tronikelis/tdm@latest
 
 ## Why not just use something that already exists?
 
-First of all, I want to take a shot at this myself, but I found that solutions I tried are complex
+First of all, I want to take a shot at this myself. And I found that existing solutions I tried are complex
 and they didn't handle nested `.git` directories
 
 ## About .git
