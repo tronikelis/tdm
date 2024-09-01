@@ -41,7 +41,12 @@ func MkDirCopyFile(from, to string) error {
 	}
 	defer fromFile.Close()
 
-	toFile, err := os.Create(to)
+	fromFileStat, err := os.Stat(from)
+	if err != nil {
+		return err
+	}
+
+	toFile, err := os.OpenFile(to, os.O_CREATE|os.O_TRUNC|os.O_RDWR, fromFileStat.Mode().Perm())
 	if err != nil {
 		return err
 	}
