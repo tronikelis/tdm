@@ -54,6 +54,7 @@ func (r Runner) normalize(p string) string {
 	return path.Join(r.wd, p)
 }
 
+// dir -> synced
 // if nil queue, creates it
 func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
 	if queue == nil {
@@ -98,6 +99,7 @@ func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
 	return queue
 }
 
+// synced <- real
 // call with empty dir ("")
 // if nil queue, creates it
 func (r Runner) addSynced(dir string, queue *taskQueue) *taskQueue {
@@ -152,6 +154,7 @@ func (r Runner) addSynced(dir string, queue *taskQueue) *taskQueue {
 	return queue
 }
 
+// synced -> real
 // call with empty dir ("")
 // if nil queue, creates it
 func (r Runner) sync(dir string, queue *taskQueue) *taskQueue {
