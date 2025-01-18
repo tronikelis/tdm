@@ -54,189 +54,170 @@ func (r Runner) normalize(p string) string {
 	return path.Join(r.wd, p)
 }
 
-// returns count of errChan writes
-func (r Runner) addPath(p string, errChan chan error) int {
+// if nil queue, creates it
+func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
+	if queue == nil {
+		queue = newTaskQueue()
+	}
 	p = r.normalize(p)
 
 	stat, err := os.Stat(p)
 	if err != nil {
-		go func() { errChan <- err }()
-		return 1
+		queue.err(err)
+		return queue
 	}
 
 	syncedDir, err := r.pathSynced(p)
 	if err != nil {
-		go func() { errChan <- err }()
-		return 1
+		queue.err(err)
+		return queue
 	}
 
 	if path.Base(p) == ".git" {
-		go func() { errChan <- zipDir(os.DirFS(p), syncedDir+".zip") }()
+		queue.add(func() error { return zipDir(os.DirFS(p), syncedDir+".zip") })
 		r.logger.Println("zipping", p)
-		return 1
+		return queue
 	}
 
 	if !stat.IsDir() {
-		go func() { errChan <- write(p, syncedDir) }()
+		queue.add(func() error { return write(p, syncedDir) })
 		r.logger.Println("adding", p)
-		return 1
+		return queue
 	}
 
 	entries, err := os.ReadDir(p)
 	if err != nil {
-		go func() { errChan <- err }()
-		return 1
+		queue.err(err)
+		return queue
 	}
 
-	c := 0
 	for _, v := range entries {
-		c += r.addPath(path.Join(p, v.Name()), errChan)
-	}
-	return c
-}
-
-// returns count of errChan writes
-// call with empty dir ("")
-func (r Runner) addSynced(dir string, errChan chan error) int {
-	syncedEntries, err := os.ReadDir(dir)
-	if err != nil {
-		go func() { errChan <- err }()
-		return 1
+		r.addPath(path.Join(p, v.Name()), queue)
 	}
 
-	c := 0
-
-	for _, v := range syncedEntries {
-		syncedPath := path.Join(dir, v.Name())
-
-		if path.Base(syncedPath) == ".git.zip" {
-			continue
-		}
-
-		realPath, err := r.pathSyncedReverse(syncedPath)
-		if err != nil {
-			go func() { errChan <- err }()
-			c += 1
-			continue
-		}
-
-		syncedStat, err := v.Info()
-		if err != nil {
-			go func() { errChan <- err }()
-			c += 1
-			continue
-		}
-
-		// assume that error means realPath does not exist
-		// delete our own synced path then
-		if _, err := os.Stat(realPath); err != nil {
-			go func() { errChan <- os.RemoveAll(syncedPath) }()
-			r.logger.Println("removing", syncedPath)
-			c += 1
-			continue
-		}
-
-		if syncedStat.IsDir() {
-			c += r.addSynced(syncedPath, errChan)
-		} else {
-			go func() { errChan <- write(realPath, syncedPath) }()
-			r.logger.Println("adding", realPath)
-			c += 1
-		}
-	}
-
-	return c
+	return queue
 }
 
 // call with empty dir ("")
-func (r Runner) sync(dir string, errChan chan error) int {
+// if nil queue, creates it
+func (r Runner) addSynced(dir string, queue *taskQueue) *taskQueue {
+	if queue == nil {
+		queue = newTaskQueue()
+	}
 	if dir == "" {
 		dir = r.synced
 	}
 
 	syncedEntries, err := os.ReadDir(dir)
 	if err != nil {
-		go func() { errChan <- err }()
-		return 1
+		queue.err(err)
+		return queue
 	}
 
-	c := 0
+	for _, v := range syncedEntries {
+		syncedPath := path.Join(dir, v.Name())
+
+		if path.Base(syncedPath) == ".git.zip" {
+			continue
+		}
+
+		realPath, err := r.pathSyncedReverse(syncedPath)
+		if err != nil {
+			queue.err(err)
+			continue
+		}
+
+		syncedStat, err := v.Info()
+		if err != nil {
+			queue.err(err)
+			continue
+		}
+
+		// assume that error means realPath does not exist
+		// delete our own synced path then
+		if _, err := os.Stat(realPath); err != nil {
+			queue.add(func() error { return os.RemoveAll(syncedPath) })
+			r.logger.Println("removing", syncedPath)
+			continue
+		}
+
+		if syncedStat.IsDir() {
+			r.addSynced(syncedPath, queue)
+		} else {
+			queue.add(func() error { return write(realPath, syncedPath) })
+			r.logger.Println("adding", realPath)
+		}
+	}
+
+	return queue
+}
+
+// call with empty dir ("")
+// if nil queue, creates it
+func (r Runner) sync(dir string, queue *taskQueue) *taskQueue {
+	if queue == nil {
+		queue = newTaskQueue()
+	}
+	if dir == "" {
+		dir = r.synced
+	}
+
+	syncedEntries, err := os.ReadDir(dir)
+	if err != nil {
+		queue.err(err)
+		return queue
+	}
 
 	for _, v := range syncedEntries {
 		syncedPath := path.Join(dir, v.Name())
 
 		realPath, err := r.pathSyncedReverse(syncedPath)
 		if err != nil {
-			go func() { errChan <- err }()
-			c += 1
+			queue.err(err)
 			continue
 		}
 
 		// sync .git here, remove .git from real, then unzip into real .git
 		if path.Base(syncedPath) == ".git.zip" {
 			gitPath := path.Join(path.Dir(realPath), ".git")
-			go func() {
+
+			queue.add(func() error {
 				if err := os.RemoveAll(gitPath); err != nil {
-					errChan <- err
-					return
+					return err
 				}
 
-				errChan <- unzipDir(syncedPath, gitPath)
-			}()
+				return unzipDir(syncedPath, gitPath)
+			})
+
 			r.logger.Println("unzipping", syncedPath)
-			c += 1
 			continue
 		}
 
 		stat, err := v.Info()
 		if err != nil {
-			go func() { errChan <- err }()
-			c += 1
+			queue.err(err)
 			continue
 		}
 
 		if stat.IsDir() {
-			c += r.sync(path.Join(dir, v.Name()), errChan)
+			r.sync(path.Join(dir, v.Name()), queue)
 		} else {
-			go func() { errChan <- write(syncedPath, realPath) }()
+			queue.add(func() error { return write(syncedPath, realPath) })
 			r.logger.Println("syncing", syncedPath)
-			c += 1
 		}
 	}
 
-	return c
-}
-
-func waitForErrors(fn func(errChan chan error) int) []error {
-	errChan := make(chan error)
-	count := fn(errChan)
-
-	errors := []error{}
-
-	for range count {
-		err := <-errChan
-		if err != nil {
-			errors = append(errors, err)
-		}
-	}
-
-	return errors
+	return queue
 }
 
 func (r Runner) UserSync() []error {
-	return waitForErrors(func(errChan chan error) int {
-		return r.sync("", errChan)
-	})
+	return r.sync("", nil).wait()
 }
 
 func (r Runner) UserAdd(p string) []error {
 	if p == "" {
-		return waitForErrors(func(errChan chan error) int {
-			return r.addSynced("", errChan)
-		})
+		return r.addSynced("", nil).wait()
 	}
 
-	return waitForErrors(func(errChan chan error) int {
-		return r.addPath(p, errChan)
-	})
+	return r.addPath(p, nil).wait()
 }
