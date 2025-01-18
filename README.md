@@ -1,5 +1,7 @@
 # Tronikel's Dotfile Manager
 
+*Made with go and over-engineered performance*
+
 ## Install
 
 ```
