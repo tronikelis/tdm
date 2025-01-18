@@ -1,3 +1,3 @@
-module github.com/Tronikelis/tdm
+module github.com/tronikelis/tdm
 
-go 1.21.6
+go 1.23.5
