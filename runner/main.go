@@ -1,10 +1,7 @@
 package runner
 
 import (
-	"archive/zip"
 	"errors"
-	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -49,55 +46,6 @@ func (r Runner) pathSyncedReverse(s string) (string, error) {
 	return path.Join(r.home, withoutSynced), nil
 }
 
-// also creates all directories up to `to`
-func write(from string, to string) error {
-	f, err := os.Open(from)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	fStat, err := f.Stat()
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(path.Dir(to), 0o770); err != nil {
-		return err
-	}
-
-	t, err := os.OpenFile(to, os.O_TRUNC|os.O_WRONLY|os.O_CREATE, fStat.Mode())
-	if err != nil {
-		return err
-	}
-	defer t.Close()
-
-	_, err = io.Copy(t, f)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// also creates all directories up to `to`
-func zipDir(from fs.FS, to string) error {
-	if err := os.MkdirAll(path.Dir(to), 0o770); err != nil {
-		return err
-	}
-
-	toFile, err := os.OpenFile(to, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o660)
-	if err != nil {
-		return err
-	}
-	defer toFile.Close()
-
-	writer := zip.NewWriter(toFile)
-	defer writer.Close()
-
-	return writer.AddFS(from)
-}
-
 func (r Runner) normalize(p string) string {
 	if path.IsAbs(p) {
 		return p
@@ -130,7 +78,7 @@ func (r Runner) addPath(p string, errChan chan error) int {
 
 	if !stat.IsDir() {
 		go func() { errChan <- write(p, syncedDir) }()
-		r.logger.Println("syncing", p)
+		r.logger.Println("adding", p)
 		return 1
 	}
 
@@ -148,6 +96,7 @@ func (r Runner) addPath(p string, errChan chan error) int {
 }
 
 // returns count of errChan writes
+// call with empty dir ("")
 func (r Runner) addSynced(dir string, errChan chan error) int {
 	syncedEntries, err := os.ReadDir(dir)
 	if err != nil {
@@ -160,14 +109,14 @@ func (r Runner) addSynced(dir string, errChan chan error) int {
 	for _, v := range syncedEntries {
 		syncedPath := path.Join(dir, v.Name())
 
+		if path.Base(syncedPath) == ".git.zip" {
+			continue
+		}
+
 		realPath, err := r.pathSyncedReverse(syncedPath)
 		if err != nil {
 			go func() { errChan <- err }()
 			c += 1
-			continue
-		}
-
-		if path.Base(syncedPath) == ".git.zip" {
 			continue
 		}
 
@@ -191,7 +140,7 @@ func (r Runner) addSynced(dir string, errChan chan error) int {
 			c += r.addSynced(syncedPath, errChan)
 		} else {
 			go func() { errChan <- write(realPath, syncedPath) }()
-			r.logger.Println("syncing", realPath)
+			r.logger.Println("adding", realPath)
 			c += 1
 		}
 	}
@@ -199,18 +148,68 @@ func (r Runner) addSynced(dir string, errChan chan error) int {
 	return c
 }
 
-func (r Runner) Sync(errChan chan error) int {
+// call with empty dir ("")
+func (r Runner) sync(dir string, errChan chan error) int {
+	if dir == "" {
+		dir = r.synced
+	}
+
+	syncedEntries, err := os.ReadDir(dir)
+	if err != nil {
+		go func() { errChan <- err }()
+		return 1
+	}
+
+	c := 0
+
+	for _, v := range syncedEntries {
+		syncedPath := path.Join(dir, v.Name())
+
+		realPath, err := r.pathSyncedReverse(syncedPath)
+		if err != nil {
+			go func() { errChan <- err }()
+			c += 1
+			continue
+		}
+
+		// sync .git here, remove .git from real, then unzip into real .git
+		if path.Base(syncedPath) == ".git.zip" {
+			gitPath := path.Join(path.Dir(realPath), ".git")
+			go func() {
+				if err := os.RemoveAll(gitPath); err != nil {
+					errChan <- err
+					return
+				}
+
+				errChan <- unzipDir(syncedPath, gitPath)
+			}()
+			r.logger.Println("unzipping", syncedPath)
+			c += 1
+			continue
+		}
+
+		stat, err := v.Info()
+		if err != nil {
+			go func() { errChan <- err }()
+			c += 1
+			continue
+		}
+
+		if stat.IsDir() {
+			c += r.sync(path.Join(dir, v.Name()), errChan)
+		} else {
+			go func() { errChan <- write(syncedPath, realPath) }()
+			r.logger.Println("syncing", syncedPath)
+			c += 1
+		}
+	}
+
+	return c
 }
 
-func (r Runner) Add(p string) []error {
+func waitForErrors(fn func(errChan chan error) int) []error {
 	errChan := make(chan error)
-
-	var count int
-	if p == "" {
-		count = r.addSynced(r.synced, errChan)
-	} else {
-		count = r.addPath(p, errChan)
-	}
+	count := fn(errChan)
 
 	errors := []error{}
 
@@ -222,4 +221,22 @@ func (r Runner) Add(p string) []error {
 	}
 
 	return errors
+}
+
+func (r Runner) UserSync() []error {
+	return waitForErrors(func(errChan chan error) int {
+		return r.sync("", errChan)
+	})
+}
+
+func (r Runner) UserAdd(p string) []error {
+	if p == "" {
+		return waitForErrors(func(errChan chan error) int {
+			return r.addSynced("", errChan)
+		})
+	}
+
+	return waitForErrors(func(errChan chan error) int {
+		return r.addPath(p, errChan)
+	})
 }

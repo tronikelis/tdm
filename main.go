@@ -36,10 +36,12 @@ func main() {
 		if len(os.Args) >= 3 {
 			target = os.Args[2]
 		}
-		if errors := runner.Add(target); len(errors) != 0 {
+		if errors := runner.UserAdd(target); len(errors) != 0 {
 			log.Fatalln(errors)
 		}
 	case "sync":
-		panic("not implemented")
+		if errors := runner.UserSync(); len(errors) != 0 {
+			log.Fatalln(errors)
+		}
 	}
 }
