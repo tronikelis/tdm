@@ -68,20 +68,20 @@ func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
 		return queue
 	}
 
-	syncedDir, err := r.pathSynced(p)
+	syncedPath, err := r.pathSynced(p)
 	if err != nil {
 		queue.err(err)
 		return queue
 	}
 
 	if path.Base(p) == ".git" {
-		queue.add(func() error { return zipDir(os.DirFS(p), syncedDir+".zip") })
+		queue.add(func() error { return zipDir(os.DirFS(p), syncedPath+".zip") })
 		r.logger.Println("zipping", p)
 		return queue
 	}
 
 	if !stat.IsDir() {
-		queue.add(func() error { return write(p, syncedDir) })
+		queue.add(func() error { return write(p, syncedPath) })
 		r.logger.Println("adding", p)
 		return queue
 	}
