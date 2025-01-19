@@ -5,7 +5,7 @@
 ## Install
 
 ```
-go install github.com/Tronikelis/tdm@v0.2
+go install github.com/tronikelis/tdm@v1.0.0
 ```
 
 ## Commands
