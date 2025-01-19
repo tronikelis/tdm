@@ -75,7 +75,12 @@ func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
 	}
 
 	if path.Base(p) == ".git" {
-		queue.add(func() error { return zipDir(os.DirFS(p), syncedPath+".zip") })
+		syncedPath = syncedPath + ".zip"
+		if _, err := os.Stat(syncedPath); err == nil { // do not override git dir
+			return queue
+		}
+
+		queue.add(func() error { return zipDir(os.DirFS(p), syncedPath) })
 		r.logger.Println("zipping", p)
 		return queue
 	}
@@ -183,14 +188,11 @@ func (r Runner) sync(dir string, queue *taskQueue) *taskQueue {
 		// sync .git here, remove .git from real, then unzip into real .git
 		if path.Base(syncedPath) == ".git.zip" {
 			gitPath := path.Join(path.Dir(realPath), ".git")
+			if _, err := os.Stat(gitPath); err == nil { // do not override existing git dir
+				continue
+			}
 
-			queue.add(func() error {
-				if err := os.RemoveAll(gitPath); err != nil {
-					return err
-				}
-
-				return unzipDir(syncedPath, gitPath)
-			})
+			queue.add(func() error { return unzipDir(syncedPath, gitPath) })
 
 			r.logger.Println("unzipping", syncedPath)
 			continue
