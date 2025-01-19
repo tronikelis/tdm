@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"strings"
 )
 
 func zipDir(from fs.FS, to string) error {
@@ -38,7 +39,17 @@ func unzipDir(from string, to string) error {
 		}
 		defer reader.Close()
 
-		if err := writeFileLike(newZipFileLike(reader, v), path.Join(to, v.Name)); err != nil {
+		toPath := path.Join(to, v.Name)
+
+		// empty directory
+		if strings.HasSuffix(v.Name, "/") {
+			if err := os.MkdirAll(toPath, 0o770); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := writeFileLike(newZipFileLike(reader, v), toPath); err != nil {
 			return err
 		}
 	}
