@@ -1,81 +1,47 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
+	"path"
 
-	"github.com/Tronikelis/tdm/commands"
+	"github.com/tronikelis/tdm/runner"
 )
 
-const SYNCED_PATH string = "synced"
-
 func main() {
-	homeDir, err := os.UserHomeDir()
+	if len(os.Args) == 1 {
+		log.Fatalln("provide command")
+	}
+
+	cmd := os.Args[1]
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	synced := path.Join(home, ".tdm/synced")
+
+	wd, err := os.Getwd()
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	syncedDir := filepath.Join(homeDir, ".tdm", SYNCED_PATH)
+	stdoutBuf := bufio.NewWriter(os.Stdout)
+	defer stdoutBuf.Flush()
+	runner := runner.NewRunner(synced, home, wd, log.New(stdoutBuf, "", log.Default().Flags()))
 
-	if err := os.MkdirAll(syncedDir, os.ModePerm); err != nil {
-		log.Fatalln(err)
-	}
-
-	args := os.Args[1:]
-
-	if len(args) == 0 {
-		log.Fatalln("the available commands are: [add, sync]")
-	}
-
-	if len(args) == 1 {
-		if args[0] == "add" {
-			log.Println("re-adding all synced files")
-
-			if err := commands.SyncToRemote(syncedDir, homeDir); err != nil {
-				log.Fatalln(err)
-			}
-
-			return
+	switch cmd {
+	case "add":
+		target := ""
+		if len(os.Args) >= 3 {
+			target = os.Args[2]
 		}
-
-		if args[0] == "sync" {
-			log.Println("syncing files from tracked directory")
-
-			if err := commands.SyncFromRemote(syncedDir, homeDir); err != nil {
-				log.Fatal(err)
-			}
-
-			return
+		if errors := runner.UserAdd(target); len(errors) != 0 {
+			log.Fatalln(errors)
 		}
-
-		log.Fatalln("unknown command, valid commands are: [add, sync]")
-	}
-
-	if len(args) == 2 {
-		if args[0] == "add" {
-			cwd, err := os.Getwd()
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			localDir := args[1]
-			if !filepath.IsAbs(localDir) {
-				localDir = filepath.Join(cwd, args[1])
-			}
-
-			if !strings.HasPrefix(localDir, homeDir) {
-				log.Fatalln("adding non /home items is not supported")
-			}
-
-			if err := commands.AddToRemote(localDir, syncedDir, homeDir); err != nil {
-				log.Fatalln(err)
-			}
-
-			return
+	case "sync":
+		if errors := runner.UserSync(); len(errors) != 0 {
+			log.Fatalln(errors)
 		}
-
-		log.Fatalln("unknown command")
 	}
 }
