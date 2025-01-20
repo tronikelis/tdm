@@ -17,7 +17,10 @@ func newAsyncRunner() asyncRunner {
 func (a asyncRunner) Run(task func() error) {
 	a.stack.Add(1)
 	go func() {
-		a.errChan <- task()
+		if err := task(); err != nil {
+			a.errChan <- err
+		}
+
 		a.stack.Add(-1)
 		if a.stack.Load() == 0 {
 			close(a.errChan)
@@ -29,9 +32,7 @@ func (a asyncRunner) WaitErrors() []error {
 	errors := []error{}
 
 	for err := range a.errChan {
-		if err != nil {
-			errors = append(errors, err)
-		}
+		errors = append(errors, err)
 	}
 
 	return errors

@@ -176,7 +176,7 @@ func (r Runner) sync(dir string, async asyncRunner) {
 				if path.Base(syncedPath) == ".git.zip" {
 					gitPath := path.Join(path.Dir(realPath), ".git")
 					if _, err := os.Stat(gitPath); err == nil { // do not override existing git dir
-						return err
+						return nil
 					}
 
 					r.logger.Println("unzipping", syncedPath)
