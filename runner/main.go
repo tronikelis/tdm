@@ -55,174 +55,167 @@ func (r Runner) normalize(p string) string {
 }
 
 // dir -> synced
-// if nil queue, creates it
-func (r Runner) addPath(p string, queue *taskQueue) *taskQueue {
-	if queue == nil {
-		queue = newTaskQueue()
-	}
+func (r Runner) addPath(p string, async asyncRunner) {
 	p = r.normalize(p)
 
-	stat, err := os.Stat(p)
-	if err != nil {
-		queue.err(err)
-		return queue
-	}
-
-	syncedPath, err := r.pathSynced(p)
-	if err != nil {
-		queue.err(err)
-		return queue
-	}
-
-	if path.Base(p) == ".git" {
-		syncedPath = syncedPath + ".zip"
-		if _, err := os.Stat(syncedPath); err == nil { // do not override git dir
-			return queue
+	async.Run(func() error {
+		stat, err := os.Stat(p)
+		if err != nil {
+			return err
 		}
 
-		queue.add(func() error { return zipDir(os.DirFS(p), syncedPath) })
-		r.logger.Println("zipping", p)
-		return queue
-	}
+		syncedPath, err := r.pathSynced(p)
+		if err != nil {
+			return err
+		}
 
-	if !stat.IsDir() {
-		queue.add(func() error { return write(p, syncedPath) })
-		r.logger.Println("adding", p)
-		return queue
-	}
+		if path.Base(p) == ".git" {
+			syncedPath = syncedPath + ".zip"
+			if _, err := os.Stat(syncedPath); err == nil { // do not override git dir
+				return nil
+			}
 
-	entries, err := os.ReadDir(p)
-	if err != nil {
-		queue.err(err)
-		return queue
-	}
+			r.logger.Println("zipping", p)
+			return zipDir(os.DirFS(p), syncedPath)
+		}
 
-	for _, v := range entries {
-		r.addPath(path.Join(p, v.Name()), queue)
-	}
+		if !stat.IsDir() {
+			r.logger.Println("adding", p)
+			return write(p, syncedPath)
+		}
 
-	return queue
+		entries, err := os.ReadDir(p)
+		if err != nil {
+			return err
+		}
+
+		for _, v := range entries {
+			r.addPath(path.Join(p, v.Name()), async)
+		}
+
+		return nil
+	})
 }
 
 // synced <- real
 // call with empty dir ("")
-// if nil queue, creates it
-func (r Runner) addSynced(dir string, queue *taskQueue) *taskQueue {
-	if queue == nil {
-		queue = newTaskQueue()
-	}
+func (r Runner) addSynced(dir string, async asyncRunner) {
 	if dir == "" {
 		dir = r.synced
 	}
 
-	syncedEntries, err := os.ReadDir(dir)
-	if err != nil {
-		queue.err(err)
-		return queue
-	}
-
-	for _, v := range syncedEntries {
-		syncedPath := path.Join(dir, v.Name())
-
-		if path.Base(syncedPath) == ".git.zip" {
-			continue
-		}
-
-		realPath, err := r.pathSyncedReverse(syncedPath)
+	async.Run(func() error {
+		syncedEntries, err := os.ReadDir(dir)
 		if err != nil {
-			queue.err(err)
-			continue
+			return err
 		}
 
-		syncedStat, err := v.Info()
-		if err != nil {
-			queue.err(err)
-			continue
+		for _, v := range syncedEntries {
+			async.Run(func() error {
+				syncedPath := path.Join(dir, v.Name())
+
+				if path.Base(syncedPath) == ".git.zip" {
+					return nil
+				}
+
+				realPath, err := r.pathSyncedReverse(syncedPath)
+				if err != nil {
+					return err
+				}
+
+				syncedStat, err := v.Info()
+				if err != nil {
+					return err
+				}
+
+				// assume that error means realPath does not exist
+				// delete our own synced path then
+				if _, err := os.Stat(realPath); err != nil {
+					r.logger.Println("removing", syncedPath)
+					return os.RemoveAll(syncedPath)
+				}
+
+				if syncedStat.IsDir() {
+					r.addSynced(syncedPath, async)
+				} else {
+					r.logger.Println("adding", realPath)
+					return write(realPath, syncedPath)
+				}
+
+				return nil
+			})
 		}
 
-		// assume that error means realPath does not exist
-		// delete our own synced path then
-		if _, err := os.Stat(realPath); err != nil {
-			queue.add(func() error { return os.RemoveAll(syncedPath) })
-			r.logger.Println("removing", syncedPath)
-			continue
-		}
-
-		if syncedStat.IsDir() {
-			r.addSynced(syncedPath, queue)
-		} else {
-			queue.add(func() error { return write(realPath, syncedPath) })
-			r.logger.Println("adding", realPath)
-		}
-	}
-
-	return queue
+		return nil
+	})
 }
 
 // synced -> real
 // call with empty dir ("")
-// if nil queue, creates it
-func (r Runner) sync(dir string, queue *taskQueue) *taskQueue {
-	if queue == nil {
-		queue = newTaskQueue()
-	}
+func (r Runner) sync(dir string, async asyncRunner) {
 	if dir == "" {
 		dir = r.synced
 	}
 
-	syncedEntries, err := os.ReadDir(dir)
-	if err != nil {
-		queue.err(err)
-		return queue
-	}
-
-	for _, v := range syncedEntries {
-		syncedPath := path.Join(dir, v.Name())
-
-		realPath, err := r.pathSyncedReverse(syncedPath)
+	async.Run(func() error {
+		syncedEntries, err := os.ReadDir(dir)
 		if err != nil {
-			queue.err(err)
-			continue
+			return err
 		}
 
-		// sync .git here, remove .git from real, then unzip into real .git
-		if path.Base(syncedPath) == ".git.zip" {
-			gitPath := path.Join(path.Dir(realPath), ".git")
-			if _, err := os.Stat(gitPath); err == nil { // do not override existing git dir
-				continue
-			}
+		for _, v := range syncedEntries {
+			async.Run(func() error {
+				syncedPath := path.Join(dir, v.Name())
 
-			queue.add(func() error { return unzipDir(syncedPath, gitPath) })
+				realPath, err := r.pathSyncedReverse(syncedPath)
+				if err != nil {
+					return err
+				}
 
-			r.logger.Println("unzipping", syncedPath)
-			continue
+				// sync .git here, remove .git from real, then unzip into real .git
+				if path.Base(syncedPath) == ".git.zip" {
+					gitPath := path.Join(path.Dir(realPath), ".git")
+					if _, err := os.Stat(gitPath); err == nil { // do not override existing git dir
+						return nil
+					}
+
+					r.logger.Println("unzipping", syncedPath)
+					return unzipDir(syncedPath, gitPath)
+				}
+
+				stat, err := v.Info()
+				if err != nil {
+					return err
+				}
+
+				if stat.IsDir() {
+					r.sync(path.Join(dir, v.Name()), async)
+				} else {
+					r.logger.Println("syncing", syncedPath)
+					return write(syncedPath, realPath)
+				}
+
+				return nil
+			})
 		}
-
-		stat, err := v.Info()
-		if err != nil {
-			queue.err(err)
-			continue
-		}
-
-		if stat.IsDir() {
-			r.sync(path.Join(dir, v.Name()), queue)
-		} else {
-			queue.add(func() error { return write(syncedPath, realPath) })
-			r.logger.Println("syncing", syncedPath)
-		}
-	}
-
-	return queue
+		return nil
+	})
 }
 
 func (r Runner) UserSync() []error {
-	return r.sync("", nil).wait()
+	async := newAsyncRunner()
+	r.sync("", async)
+	return async.WaitErrors()
 }
 
 func (r Runner) UserAdd(p string) []error {
+	async := newAsyncRunner()
+
 	if p == "" {
-		return r.addSynced("", nil).wait()
+		r.addSynced("", async)
+		return async.WaitErrors()
 	}
 
-	return r.addPath(p, nil).wait()
+	r.addPath(p, async)
+	return async.WaitErrors()
 }
